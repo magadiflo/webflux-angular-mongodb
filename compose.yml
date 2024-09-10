@@ -1,0 +1,22 @@
+services:
+  mongodb:
+    image: mongo:6-jammy
+    container_name: c-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: magadiflo
+      MONGO_INITDB_ROOT_PASSWORD: magadiflo
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - reactive-todo-list-net
+
+volumes:
+  mongo_data:
+    name: mongo_data
+
+networks:
+  reactive-todo-list-net:
+    name: reactive-todo-list-net
