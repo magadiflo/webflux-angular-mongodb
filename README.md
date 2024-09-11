@@ -439,3 +439,50 @@ public interface ItemRepository extends ReactiveMongoRepository<Item, String> {
 }
 ````
 
+## Configura propiedades de configuración de la aplicación
+
+A continuación se explicarán algunas configuraciones realizadas en el archivo `application.yml`:
+
+- El `username` y `password` especificado es `magadiflo`, que coinciden con las credenciales proporcionadas en la
+  configuración de `Docker Compose`.
+
+- Hemos configurado un `authentication-database: admin`. Esta configuración es relevante cuando necesitas especificar
+  la base de datos que contiene las credenciales de usuario que se utilizarán para autenticarte. Por defecto, `MongoDB`
+  utiliza la base de datos `admin` para autenticar a los usuarios si no se especifica otra base de datos.
+
+- `admin` es la base de datos por defecto utilizada para la autenticación en `MongoDB` cuando se configuran usuarios de
+  administración. Esto es correcto según la configuración de `Docker Compose` que proporcionaste.
+  (Para mayor información sobre esta propiedad visitar mi otro repositorio
+  [microservices-e-commerce](https://github.com/magadiflo/microservices-e-commerce/blob/main/business-domain/customer-service/README.md#agrega-propiedades-de-configuraci%C3%B3n))
+
+````yml
+server:
+  port: 8080
+  error:
+    include-message: always
+
+spring:
+  application:
+    name: todo-list-backend
+  data:
+    mongodb:
+      host: localhost
+      port: 27017
+      database: db_reactive_todo_list
+      username: magadiflo
+      password: magadiflo
+      authentication-database: admin
+
+logging:
+  level:
+    org.springframework.data.mongodb.core.ReactiveMongoTemplate: DEBUG
+````
+
+La configuración `logging.level.org.springframework.data.mongodb.core.ReactiveMongoTemplate=DEBUG` establece el nivel de
+logging en `DEBUG` para la clase `ReactiveMongoTemplate` de `Spring Data MongoDB` en tu aplicación. Esto significa que
+cualquier mensaje de log con nivel `DEBUG` o superior (como `INFO`, `WARN`, y `ERROR`) generado por
+`ReactiveMongoTemplate` será mostrado en la salida de logs.
+
+Entonces, con la configuración del `logging` anterior podemos ver las consultas que se están ejecutando en la base de
+datos `MongoDB` en la consola o en el archivo de logs. Esto incluye detalles sobre las operaciones CRUD y otras
+interacciones con la base de datos.
