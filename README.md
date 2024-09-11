@@ -429,3 +429,13 @@ Con respecto a la anotación `@Version`, esta anotación no requiere que se le h
 actualización para asegurar el control de versiones y la concurrencia optimista. La anotación `@Version` se encarga de
 incrementar el valor del campo version en cada actualización del documento, lo que ayuda a manejar los conflictos de
 concurrencia.
+
+## El repositorio
+
+El repositorio que crearemos extenderá de `ReactiveMongoRepository`.
+
+````java
+public interface ItemRepository extends ReactiveMongoRepository<Item, String> {
+}
+````
+
