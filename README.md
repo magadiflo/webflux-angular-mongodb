@@ -486,3 +486,93 @@ cualquier mensaje de log con nivel `DEBUG` o superior (como `INFO`, `WARN`, y `E
 Entonces, con la configuración del `logging` anterior podemos ver las consultas que se están ejecutando en la base de
 datos `MongoDB` en la consola o en el archivo de logs. Esto incluye detalles sobre las operaciones CRUD y otras
 interacciones con la base de datos.
+
+## La API REST
+
+La comunicación entre el `front-end` y el `back-end` se realizará mediante una `API REST`. Para evitar exponer nuestro
+modelo en nuestra API REST, pero también para tener un contrato claro, necesitamos crear algunas clases de recursos o
+en otras palabras crearemos `DTOs` que nos permitirán recibir la información proveniente de los request y otros que nos
+permitirá enviar la información como `response` al cliente.
+
+### Crear un nuevo Item (POST)
+
+La creación de un nuevo item consiste únicamente en enviar una descripción. El estado predeterminado será `TO_DO`.
+
+````java
+
+@ToString
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@Setter
+@Getter
+public class NewItemResource {
+    @NotBlank
+    private String description;
+}
+````
+
+### Actualizar completamente un item existente (PUT)
+
+Enviar la `representación JSON completa` del elemento llamando al punto de conexión `PUT` con el siguiente recurso.
+
+````java
+
+@ToString
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@Setter
+@Getter
+public class ItemUpdateResource {
+    @NotBlank
+    private String description;
+    @NotNull
+    private ItemStatus status;
+}
+````
+
+### Actualizar parcialmente un item existente (PATCH)
+
+Enviar un `documento JSON` que contenga solo los `cambios necesarios`. Esto se puede lograr llamando al punto de
+conexión `PATCH` con el siguiente recurso.
+
+````java
+
+@ToString
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@Setter
+@Getter
+public class ItemPatchResource {
+    private String description;
+    private ItemStatus status;
+}
+````
+
+### Eliminar un item (DELETE)
+
+La eliminación de un item no requiere un recurso. Solo necesitamos enviar el identificador del elemento como un
+parámetro de ruta.
+
+### Obtener los items (GET)
+
+Los endpoints `GET` devolverán el siguiente recurso.
+
+````java
+@ToString
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@Setter
+@Getter
+public class ItemResource {
+    private String id;
+    private String description;
+    private ItemStatus status;
+    private Long version;
+    private Instant createdDate;
+    private Instant lastModifiedDate;
+}
+````
