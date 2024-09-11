@@ -276,3 +276,156 @@ $ http://localhost:8080/v3/api-docs.yaml
 ````
 
 ![02.swagger.png](assets/02.swagger.png)
+
+## El modelo de datos
+
+Vamos a crear nuestra entidad `Item` y luego explicaré algunas de las anotaciones que se está usando.
+
+````java
+
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@Setter
+@Getter
+@Document(collection = "items")
+public class Item {
+
+    @Id
+    @EqualsAndHashCode.Include
+    private String id;
+    private String description;
+    private ItemStatus status = ItemStatus.TO_DO;
+
+    @Version
+    private Long version;
+
+    @CreatedDate
+    private Instant createdDate;
+
+    @LastModifiedDate
+    private Instant lastModifiedDate;
+}
+````
+
+La entidad `Item` hace uso de un `enum` donde definimos los distintos estados del item.
+
+````java
+public enum ItemStatus {
+    TO_DO,
+    IN_PROGRESS,
+    DONE
+}
+````
+
+Ahora que ya hemos definido nuestra entidad `Item` y su enum `ItemStatus`, pasamos a describir algunas de sus
+anotaciones.
+
+### @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+
+Esta anotación es parte de `Lombok` y se utiliza para generar automáticamente los métodos `equals()` y `hashCode()` para
+la clase.
+
+Cuando el parámetro `onlyExplicitlyIncluded` se establece en `true`, indica que solo se deben incluir en la
+comparación aquellos campos que han sido explícitamente marcados con `@EqualsAndHashCode.Include`.
+
+Esto significa que solo los campos que tú decides incluir estarán considerados en la lógica de igualdad y en el
+cálculo del hash. Los campos que no estén marcados serán ignorados.
+
+### @EqualsAndHashCode.Include
+
+Esta anotación se utiliza para marcar los campos que deseas incluir en los métodos `equals()` y `hashCode()`.
+
+Al usar `@EqualsAndHashCode.Include` en un campo (como `id` en tu caso), estás indicando que este campo debe ser
+considerado para determinar la igualdad de instancias de la clase.
+
+Esto es útil en situaciones en las que solo ciertos campos son relevantes para la comparación de objetos, lo cual es
+común en entidades de bases de datos donde el campo id es único.
+
+**Con las anotaciones como las tenemos definidas:**
+
+- Dos objetos `Item` se considerarán iguales `(equals())` si tienen el mismo valor de `id`, independientemente de los
+  valores de los otros campos.
+- El valor del código hash `(hashCode())` también se calculará solo usando el campo `id`.
+
+**NOTA**
+> En el tutorial se hace uso de la anotación `@EqualsAndHashCode(of = "id")`, es decir, se usa el atributo `of` para
+> definir los campos a incluir en el cálculo del `equals` y `hashCode`, pero según la misma documentación de `Lombok`
+> menciona que `pronto se marcará como @Deprecated; nos recomienda que usemos la anotación @EqualsAndHashCode.Include
+> junto con @EqualsAndHashCode(onlyExplicitlyIncluded = true).`
+
+### @Version
+
+Esta anotación es utilizada en `MongoDB` para implementar control de versiones en una entidad. Su función
+principal es manejar la concurrencia optimista. Cuando una entidad es modificada, el valor de este campo `version` se
+incrementa automáticamente. Esto permite a `MongoDB` detectar si la entidad ha sido modificada desde la última
+lectura, ayudando a evitar conflictos cuando múltiples operaciones intentan actualizar la misma entidad al mismo
+tiempo. Si una actualización ocurre y el valor de la versión no coincide con el valor esperado, `MongoDB` lanzará una
+excepción para indicar que la entidad ha cambiado.
+
+### @CreatedDate
+
+Esta anotación se usa para marcar un campo que debe ser automáticamente establecido con la fecha y hora en que se creó
+el documento en la base de datos. Es útil para rastrear cuándo fue creado el documento. La fecha y hora se establecen al
+momento de la inserción del documento y no se actualizan posteriormente.
+
+### @LastModifiedDate
+
+Esta anotación marca un campo para que sea automáticamente actualizado con la fecha y hora de la última modificación del
+documento. Cada vez que el documento es actualizado, este campo se actualiza para reflejar la última vez que se
+modificó. Es útil para tener un registro de la última vez que el documento fue modificado.
+
+Notar que el tipo de dato usado en los campos `createdDate` y `lastModifiedDate` son del tipo `Instant`. Podría haber
+usado el `LocalDateTime`, pero en el tutorial usan `Instant`. Además, existen diferencias entre un tipo `Instant` y un
+`LocalDateTime`.
+
+- `Instant`
+    - `Formato`: Siempre retorna en el formato de año, mes, día, hora, minuto, segundo, etc.
+      `2024-09-11T00:23:40.831022600Z` (en UTC).
+    - `Zona Horaria`: Siempre está en `UTC` (Tiempo Universal Coordinado), lo que significa que el valor es el mismo sin
+      importar la ubicación geográfica.
+    - `Consistencia`: Ideal para situaciones donde necesitas un punto de tiempo que sea universal y consistente, como en
+      sistemas distribuidos o registros de eventos.
+
+
+- `LocalDateTime`
+    - `Formato`: También retorna en el formato de año, mes, día, hora, minuto, segundo, etc.
+      `2024-09-10T19:23:40.830022700` (en la zona horaria de tu PC, que es UTC-5)
+    - `Zona Horaria`: La fecha y hora se ajustan según la zona horaria local de la máquina donde se ejecuta el código.
+      Esto significa que el resultado puede variar dependiendo de la configuración regional de la computadora o el país
+      en el que te encuentres.
+    - `Uso`: Útil para aplicaciones que requieren trabajar con fechas y horas en un contexto local, como eventos
+      programados, horarios de trabajo o cualquier cosa que dependa de la hora local.
+
+**Por lo tanto:**
+
+- `Instant` es independiente del país o zona horaria. Siempre muestra la fecha y hora en `UTC`.
+- `LocalDateTime` es dependiente de la zona horaria local de tu sistema. Muestra la fecha y hora local correspondiente a
+  la configuración actual de la zona horaria.
+
+## Habilita anotaciones de auditoría
+
+Para poder habilitar el soporte de auditoría a los campos anotados con `@CreatedDate` y `@LastModifiedDate` y estos
+funcionen correctamente, y además, se gestionen de manera automática, debemos agregar la anotación
+`@EnableReactiveMongoAuditing` en una clase de configuración. En nuestro caso lo anotaré en la clase principal de la
+aplicación.
+
+````java
+
+@EnableReactiveMongoAuditing
+@SpringBootApplication
+public class TodoListBackendApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(TodoListBackendApplication.class, args);
+    }
+}
+````
+
+Con respecto a la anotación `@Version`, esta anotación no requiere que se le habilite nada para que funcione, es decir,
+`Spring Data Reactive MongoDB` lo maneja directamente sin requerir alguna configuración adicional.
+`Spring Data Reactive MongoDB` se encargará de actualizar automáticamente el campo `version` en cada operación de
+actualización para asegurar el control de versiones y la concurrencia optimista. La anotación `@Version` se encarga de
+incrementar el valor del campo version en cada actualización del documento, lo que ayuda a manejar los conflictos de
+concurrencia.
