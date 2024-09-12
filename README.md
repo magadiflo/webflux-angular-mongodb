@@ -561,6 +561,7 @@ parámetro de ruta.
 Los endpoints `GET` devolverán el siguiente recurso.
 
 ````java
+
 @ToString
 @AllArgsConstructor
 @NoArgsConstructor
@@ -575,4 +576,231 @@ public class ItemResource {
     private Instant createdDate;
     private Instant lastModifiedDate;
 }
+````
+
+## El controlador REST
+
+El controlador delega todas las llamadas a la capa de servicio llamando a los métodos de `ItemService`. Recordar que
+estamos usando inyección de dependencia, esto significa que en tiempo de ejecución se inyectará la implementación
+concreta de la interfaz `ItemService`.
+
+````java
+
+@Slf4j
+@RequiredArgsConstructor
+@RestController
+@RequestMapping(path = "/api/v1/items")
+public class ItemController {
+
+    private final ItemService itemService;
+
+    @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Mono<ResponseEntity<Flux<ItemResource>>> findAllItems() {
+        return Mono.just(ResponseEntity.ok(this.itemService.findAllItems()));
+    }
+
+    @GetMapping(path = "/{itemId}")
+    public Mono<ResponseEntity<ItemResource>> findItemById(@PathVariable final String itemId) {
+        return this.itemService.findItemById(itemId, null)
+                .map(ResponseEntity::ok);
+    }
+
+    @PostMapping
+    public Mono<ResponseEntity<ItemResource>> createItem(@Valid @RequestBody final NewItemResource item) {
+        return this.itemService.createItem(item)
+                .map(itemResource -> new ResponseEntity<>(itemResource, HttpStatus.CREATED));
+    }
+
+    @PutMapping(path = "/{itemId}")
+    public Mono<ResponseEntity<ItemResource>> updateItem(@NotNull @PathVariable final String itemId,
+                                                         @Valid @RequestBody final ItemUpdateResource itemUpdateResource) {
+        return this.itemService.updateItem(itemId, itemUpdateResource)
+                .map(ResponseEntity::ok);
+    }
+
+    @PatchMapping(path = "/{itemId}")
+    public Mono<ResponseEntity<ItemResource>> updateItem(@NotNull @PathVariable final String itemId,
+                                                         @Valid @RequestBody final ItemPatchResource itemPatchResource) {
+        return this.itemService.updateItem(itemId, itemPatchResource)
+                .map(ResponseEntity::ok);
+    }
+
+    @DeleteMapping(path = "/{itemId}")
+    public Mono<ResponseEntity<Void>> deleteItem(@PathVariable final String itemId) {
+        return this.itemService.deleteItem(itemId)
+                .thenReturn(ResponseEntity.noContent().build());
+    }
+
+}
+````
+
+### MediaType.TEXT_EVENT_STREAM_VALUE
+
+**Referencias**
+
+- [3 techniques to stream JSON in Spring WebFlux](https://nurkiewicz.com/2021/08/json-streaming-in-webflux.html)
+- [Server-Sent Events in Spring](https://www.baeldung.com/spring-server-sent-events)
+
+Un punto interesante es que en el endpoint que retorna todos los `items`, configuramos la anotación `@GetMapping`
+para que retorne el tipo de contenido `MediaType.TEXT_EVENT_STREAM_VALUE` cuyo valor real sería `text/event-stream`.
+Esto indica que el endpoint devolverá datos en un formato de `streaming de eventos` (SSE: Server-Sent Events).
+
+`MediaType.TEXT_EVENT_STREAM_VALUE`, es un tipo de contenido que se utiliza para enviar datos de manera continua desde
+el servidor al cliente. Este tipo de media es especialmente útil para aplicaciones que necesitan actualizarse en tiempo
+real, como notificaciones, actualizaciones de estado, o cualquier tipo de datos que cambian frecuentemente.
+
+`Server-Sent-Events`, o `SSE` para abreviar, es un estándar `HTTP` que permite a una aplicación web manejar un flujo de
+`eventos unidireccional` y recibir actualizaciones cada vez que el servidor emite datos.
+
+**¿Cómo funciona?**
+
+- `Streaming de eventos`: En lugar de enviar una respuesta completa de una sola vez, el servidor envía datos en
+  fragmentos a medida que están disponibles. Esto permite que el cliente reciba actualizaciones en tiempo real sin tener
+  que hacer múltiples solicitudes.
+
+
+- `Formato`: Los datos se envían en un formato de `texto simple`, donde cada evento está separado por
+  `dos saltos de línea`. Cada evento puede contener varios campos, como `event`, `data`, `id`, etc.
+
+Podemos hacer uso de implementaciones como la clase `Flux` proporcionada por la biblioteca `Reactor`, o potencialmente
+la entidad `ServerSentEvent`, que nos da control sobre los metadatos de los eventos.
+
+Para entender mejor el `SSE: Server-Sent Events` veamos un ejemplo. Supongamos que tenemos los siguientes endpoints.
+Notar que cada uno de los tres tiene un `MediaType` distinto. El primer endpoint tiene el `TEXT_EVENT_STREAM_VALUE`,
+el segundo `APPLICATION_NDJSON_VALUE` y el tercero tiene el `MediaType` que viene por defecto `APPLICATION_JSON_VALUE`
+por esa razón no lo coloqué explícitamente.
+
+````java
+
+@RestController
+@RequestMapping(path = "/api/v1/streaming")
+public class StreamingController {
+
+    @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Mono<ResponseEntity<Flux<Data>>> sse(@RequestParam(value = "fail", required = false, defaultValue = "false") boolean fail) {
+        return Mono.just(ResponseEntity.ok(source(fail)));
+    }
+
+    @GetMapping(produces = MediaType.APPLICATION_NDJSON_VALUE)
+    public Mono<ResponseEntity<Flux<Data>>> ndjson(@RequestParam(value = "fail", required = false, defaultValue = "false") boolean fail) {
+        return Mono.just(ResponseEntity.ok(source(fail)));
+    }
+
+    @GetMapping
+    public Mono<ResponseEntity<Flux<Data>>> array(@RequestParam(value = "fail", required = false, defaultValue = "false") boolean fail) {
+        return Mono.just(ResponseEntity.ok(source(fail)));
+    }
+
+    private Flux<Data> source(boolean fail) {
+        return fail ? failing() : successful();
+    }
+
+    private Flux<Data> failing() {
+        return successful().concatWith(Mono.error(new RuntimeException("Opps!")));
+    }
+
+    private Flux<Data> successful() {
+        return Flux.interval(Duration.ofSeconds(2))
+                .take(5)
+                .map(i -> new Data(i, Instant.now()));
+    }
+}
+````
+
+````java
+public record Data(long seqNo, Instant timestamp) {
+}
+````
+
+Ahora, realizaremos las pruebas a cada uno de los endpoints y observaremos los resultados.
+
+#### SSE: Server-Sent Events
+
+Se trata de un flujo SSE estándar con cada objeto de Flux en una línea independiente. El cliente puede consumir
+SSE fácilmente, incluido JavaScript. Vale la pena mencionar que SSE admite cualquier contenido, no solo JSON.
+
+````bash
+$ curl -v -H "Accept: text/event-stream" http://localhost:8080/api/v1/streaming
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: text/event-stream;charset=UTF-8
+<
+data:{"seqNo":0,"timestamp":"2024-09-12T01:14:13.611391700Z"}
+
+data:{"seqNo":1,"timestamp":"2024-09-12T01:14:15.619064800Z"}
+
+data:{"seqNo":2,"timestamp":"2024-09-12T01:14:17.619469800Z"}
+
+data:{"seqNo":3,"timestamp":"2024-09-12T01:14:19.608150600Z"}
+
+data:{"seqNo":4,"timestamp":"2024-09-12T01:14:21.618173200Z"}
+````
+
+#### NDJSON - JSON delimitado por nueva línea
+
+Este es un enfoque bastante nuevo que aún no está bien establecido. Es similar a SSE, pero mucho más simple.
+Básicamente, en lugar de devolver una matriz JSON con elementos individuales, devolvemos cada elemento como un documento
+JSON separado. Cada línea de la salida es un documento JSON bien formateado. No hay corchetes que lo encierren.
+
+¡Observe con atención! Cada línea es un JSON válido e independiente. Sin embargo, el cuerpo completo de la respuesta no
+es un JSON válido. Es solo una colección de documentos JSON separados por saltos de línea.
+
+````bash
+$ curl -v -H "Accept: application/x-ndjson" http://localhost:8080/api/v1/streaming
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: application/x-ndjson
+<
+{"seqNo":0,"timestamp":"2024-09-12T01:15:05.708100800Z"}
+{"seqNo":1,"timestamp":"2024-09-12T01:15:07.712009300Z"}
+{"seqNo":2,"timestamp":"2024-09-12T01:15:09.717619600Z"}
+{"seqNo":3,"timestamp":"2024-09-12T01:15:11.709807200Z"}
+{"seqNo":4,"timestamp":"2024-09-12T01:15:13.705846700Z"}
+````
+
+#### JSON clásico
+
+Por último, pero no menos importante, ¿cómo trata `Spring WebFlux` a `Flux<Data>` cuando no se proporciona un
+`Content-Type`?
+
+Esto es algo con lo que estamos más familiarizados. `Spring WebFlux` simplemente toma todos los elementos y crea una
+matriz a partir de ellos. Internamente, llama a `Flux.collectList()` que convierte `Flux<T>` en `Mono<List<T>>`.
+Una vez que tenemos todos los elementos individuales recopilados juntos, simplemente creamos una matriz JSON a partir
+de ellos. La lista de elementos recopilados tiene tres enormes efectos secundarios:
+
+- No es compatible con transmisiones infinitas (algo típico de `SSE/NDJSON`)
+- `TTFB` ("tiempo hasta el primer byte") es peor
+- El manejo de errores es más estricto
+
+````bash
+$ curl -v http://localhost:8080/api/v1/streaming | jq
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: application/json
+<
+[
+  {
+    "seqNo": 0,
+    "timestamp": "2024-09-12T01:15:58.933001400Z"
+  },
+  {
+    "seqNo": 1,
+    "timestamp": "2024-09-12T01:16:00.920130200Z"
+  },
+  {
+    "seqNo": 2,
+    "timestamp": "2024-09-12T01:16:02.928070900Z"
+  },
+  {
+    "seqNo": 3,
+    "timestamp": "2024-09-12T01:16:04.929504900Z"
+  },
+  {
+    "seqNo": 4,
+    "timestamp": "2024-09-12T01:16:06.924356100Z"
+  }
+]
 ````
