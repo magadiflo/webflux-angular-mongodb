@@ -23,6 +23,7 @@ public class Item {
     @EqualsAndHashCode.Include
     private String id;
     private String description;
+    @Builder.Default
     private ItemStatus status = ItemStatus.TO_DO;
 
     @Version

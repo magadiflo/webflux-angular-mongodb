@@ -297,6 +297,7 @@ public class Item {
     @EqualsAndHashCode.Include
     private String id;
     private String description;
+    @Builder.Default
     private ItemStatus status = ItemStatus.TO_DO;
 
     @Version
@@ -310,7 +311,9 @@ public class Item {
 }
 ````
 
-La entidad `Item` hace uso de un `enum` donde definimos los distintos estados del item.
+Si observamos nuestra entidad `Item`, su campo `status` es un `enum` llamado `ItemStatus` al cual le estoy agregando
+una anotación de lombok `@Builder.Default`. Esta anotación nos asegura que el campo `status` tendrá el valor por
+defecto `ItemStatus.TO_DO` cuando se construya una nueva instancia de `Item` con el builder de `Lombok`.
 
 ````java
 public enum ItemStatus {
