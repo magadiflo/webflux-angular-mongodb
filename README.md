@@ -601,7 +601,7 @@ public class ItemController {
 
     @GetMapping(path = "/{itemId}")
     public Mono<ResponseEntity<ItemResource>> findItemById(@PathVariable final String itemId) {
-        return this.itemService.findItemById(itemId, null)
+        return this.itemService.findItemById(itemId)
                 .map(ResponseEntity::ok);
     }
 
@@ -803,4 +803,162 @@ $ curl -v http://localhost:8080/api/v1/streaming | jq
     "timestamp": "2024-09-12T01:16:06.924356100Z"
   }
 ]
+````
+
+## El Servicio
+
+Antes de iniciar con el código própio del servicio, mostraré algunas clases que se usan en él como las
+excepciones personalizadas y la interfaz de mapeo usando la dependencia de `MapStruct`. Iniciamos mostrando las clases
+personalizadas para las excepciones.
+
+````java
+public class NotFoundException extends RuntimeException {
+    public NotFoundException(String message) {
+        super(message);
+    }
+}
+````
+
+````java
+public class ItemNotFoundException extends NotFoundException {
+    public ItemNotFoundException(String itemId) {
+        super("El item [%s] no fue encontrado".formatted(itemId));
+    }
+}
+````
+
+Ahora, mostramos la interfaz mapeadora para la entidad `Item` que hace uso de las anotaciones de `MapStruct`. Veamos
+en detalle las anotaciones que usa:
+
+- `@Mapper(componentModel = MappingConstants.ComponentModel.SPRING)`, marca una interfaz o clase abstracta como un
+  mapper y activa la generación de una implementación de ese tipo a través de `MapStruct`. En otras palabras, esta
+  anotación indica que esta interfaz es un mapper de `MapStruct` y que el componente generado será un `bean` de
+  `Spring`. Esto permite que Spring gestione la instancia del mapper.
+
+
+- `MappingConstants.ComponentModel.SPRING`, cuyo valor es `spring`, indica que el mapeador generado es un bean de Spring
+  y se puede recuperar a través de `@Autowired` o cualquier otro mecanismo de `inyección de dependencias` de `Spring`,
+  como constructor injection o setter injection.
+
+
+- `@MappingTarget`, declara un parámetro de un método de mapeo como el objetivo del mapeo.
+
+````java
+
+@Mapper(componentModel = MappingConstants.ComponentModel.SPRING)
+public interface ItemMapper {
+
+    ItemResource toResource(Item item);
+
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "status", ignore = true)
+    @Mapping(target = "version", ignore = true)
+    @Mapping(target = "createdDate", ignore = true)
+    @Mapping(target = "lastModifiedDate", ignore = true)
+    Item toModel(NewItemResource item);
+
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "version", ignore = true)
+    @Mapping(target = "createdDate", ignore = true)
+    @Mapping(target = "lastModifiedDate", ignore = true)
+    void update(ItemUpdateResource updateResource, @MappingTarget Item item);
+
+}
+````
+
+A continuación, pasamos a definir la interfaz del servicio.
+
+````java
+public interface ItemService {
+    Flux<ItemResource> findAllItems();
+
+    Mono<ItemResource> findItemById(final String itemId);
+
+    Mono<ItemResource> createItem(final NewItemResource item);
+
+    Mono<ItemResource> updateItem(final String itemId, final ItemUpdateResource itemUpdateResource);
+
+    Mono<ItemResource> updateItem(final String itemId, final ItemPatchResource itemPatchResource);
+
+    Mono<Void> deleteItem(final String itemId);
+}
+````
+
+Pasamos a la implementación de la interfaz anterior. Un punto a resaltar en esta implementación es que hemos
+creado un método privado que se encarga de buscar un `item` y si no se encuentra, el método lanzará la excepción
+`ItemNotFoundException`, de esa manera, centralizamos la búsqueda de un item y el lanzamiento de la excepción
+en caso no se encuentre, ahora, simplemente los métodos que hagan operaciones que requiera previamente la búsqueda
+de un item, utilizarán este método privado.
+
+````java
+
+@Slf4j
+@RequiredArgsConstructor
+@Service
+public class ItemServiceImpl implements ItemService {
+
+    private static final Sort DEFAULT_SORT = Sort.by(Sort.Order.by("lastModifiedDate"));
+
+    private final ItemRepository itemRepository;
+    private final ItemMapper itemMapper;
+
+    @Override
+    public Flux<ItemResource> findAllItems() {
+        return this.itemRepository.findAll(DEFAULT_SORT)
+                .map(this.itemMapper::toResource);
+    }
+
+    @Override
+    public Mono<ItemResource> findItemById(String itemId) {
+        return this.findAnItemById(itemId)
+                .map(this.itemMapper::toResource);
+    }
+
+    @Override
+    public Mono<ItemResource> createItem(NewItemResource item) {
+        return this.itemRepository.save(this.itemMapper.toModel(item))
+                .map(this.itemMapper::toResource);
+    }
+
+    @Override
+    public Mono<ItemResource> updateItem(String itemId, ItemUpdateResource itemUpdateResource) {
+        return this.findAnItemById(itemId)
+                .flatMap(itemDB -> {
+                    this.itemMapper.update(itemUpdateResource, itemDB);
+                    return this.itemRepository.save(itemDB);
+                })
+                .map(this.itemMapper::toResource);
+    }
+
+    @Override
+    public Mono<ItemResource> updateItem(String itemId, ItemPatchResource itemPatchResource) {
+        return this.findAnItemById(itemId)
+                .flatMap(itemDB -> {
+                    if (itemPatchResource.getDescription() != null) {
+                        itemDB.setDescription(itemPatchResource.getDescription());
+                    }
+                    if (itemPatchResource.getStatus() != null) {
+                        itemDB.setStatus(itemPatchResource.getStatus());
+                    }
+                    return this.itemRepository.save(itemDB);
+                })
+                .map(this.itemMapper::toResource);
+    }
+
+    @Override
+    public Mono<Void> deleteItem(String itemId) {
+        return this.findAnItemById(itemId)
+                .flatMap(this.itemRepository::delete);
+    }
+
+    /**
+     * @param itemId identificador del item que buscamos
+     * @return un mono item
+     * @throws ItemNotFoundException si el item con el identificador proporcionado no existe
+     */
+    private Mono<Item> findAnItemById(final String itemId) {
+        return this.itemRepository.findById(itemId)
+                .switchIfEmpty(Mono.error(new ItemNotFoundException(itemId)));
+    }
+}
 ````

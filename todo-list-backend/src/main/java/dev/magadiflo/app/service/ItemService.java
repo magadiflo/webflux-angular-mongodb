@@ -10,7 +10,7 @@ import reactor.core.publisher.Mono;
 public interface ItemService {
     Flux<ItemResource> findAllItems();
 
-    Mono<ItemResource> findItemById(final String itemId, final Long version);
+    Mono<ItemResource> findItemById(final String itemId);
 
     Mono<ItemResource> createItem(final NewItemResource item);
 

@@ -31,7 +31,7 @@ public class ItemController {
 
     @GetMapping(path = "/{itemId}")
     public Mono<ResponseEntity<ItemResource>> findItemById(@PathVariable final String itemId) {
-        return this.itemService.findItemById(itemId, null)
+        return this.itemService.findItemById(itemId)
                 .map(ResponseEntity::ok);
     }
 
