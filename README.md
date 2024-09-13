@@ -1074,3 +1074,17 @@ $ curl -v -X DELETE http://localhost:8080/api/v1/items/66e381df1432ce4b9c6ae677 
 < HTTP/1.1 204 No Content
 <
 ````
+
+## Instalando Angular Material
+
+Nos ubicamos en la raíz de nuestro proyecto de Angular y ejecutamos el siguiente comando para instalar
+`Angular Material`.
+
+````bash
+$ ng add @angular/material
+````
+
+Para mayor información sobre la instalación de `Angular Material` visitar mis repositorios:
+
+- [angular-material](https://github.com/magadiflo/angular-material)
+- [05-heroes-app](https://github.com/magadiflo/angular_de_cero_a_experto_2023/tree/main/05-heroes-app)
