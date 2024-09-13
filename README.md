@@ -965,3 +965,87 @@ public class ItemServiceImpl implements ItemService {
     }
 }
 ````
+
+## Probando endpoints del controlador ItemController
+
+Crea un nuevo item. Observar que como valor por defecto del `status` es un `TO_DO`.
+
+````bash
+$ curl -v -X POST -H "Content-Type: application/json" -d "{\"description\": \"Realizar pruebas unitarias\"}" http://localhost:8080/api/v1/items | jq
+>
+< HTTP/1.1 201 Created
+<
+{
+  "id": "66e381df1432ce4b9c6ae677",
+  "description": "Realizar pruebas unitarias",
+  "status": "TO_DO",
+  "version": 0,
+  "createdDate": "2024-09-13T00:05:51.885613600Z",
+  "lastModifiedDate": "2024-09-13T00:05:51.885613600Z"
+}
+````
+
+Lista todos los items de la base de datos. Observar que los datos retornados son del tipo de contenido
+`text/event-stream;charset=UTF-8`, esto es gracias a que en el endpoint le cambiamos el valor por defecto del producer
+a un `@GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)`. Precisamente por esa razón es que al ejecutar el
+comando de `curl` le quité la opción de `jq` que es lo que nos ayuda a formatear la respuesta json.
+
+````bash
+$ curl -v http://localhost:8080/api/v1/items
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: text/event-stream;charset=UTF-8
+<
+data:{"id":"66e381df1432ce4b9c6ae677","description":"Realizar pruebas unitarias","status":"TO_DO","version":0,"createdDate":"2024-09-13T00:05:51.885Z","lastModifiedDate":"2024-09-13T00:05:51.885Z"}
+````
+
+Ver un item en específico.
+
+````bash
+$ curl -v http://localhost:8080/api/v1/items/66e381df1432ce4b9c6ae677 | jq
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "66e381df1432ce4b9c6ae677",
+  "description": "Realizar pruebas unitarias",
+  "status": "TO_DO",
+  "version": 0,
+  "createdDate": "2024-09-13T00:05:51.885Z",
+  "lastModifiedDate": "2024-09-13T00:05:51.885Z"
+}
+````
+
+Actualizamos un item. Observar que anteriormente la `version` tenía el valor de `0` pero con la actualización del item
+el valor cambió automáticamente a `1`. `Spring Data Reactive MongoDB` maneja automáticamente el campo `version` sin
+necesidad de habilitar nada extra (solo debemos anotar con `@Version` la propiedad `version` de `Item`).
+El campo `version` se actualiza automáticamente en cada operación de actualización del documento, lo que ayuda a manejar
+los conflictos de concurrencia. Esto asegura que si dos procesos intentan actualizar el mismo documento al mismo tiempo,
+solo uno de ellos tendrá éxito, evitando así inconsistencias en los datos.
+
+````bash
+$ curl -v -X PUT -H "Content-Type: application/json" -d "{\"description\": \"Unit Test\", \"status\": \"IN_PROGRESS\"}" http://localhost:8080/api/v1/items/66e381df1432ce4b9c6ae677 | jq
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "66e381df1432ce4b9c6ae677",
+  "description": "Unit Test",
+  "status": "IN_PROGRESS",
+  "version": 1,
+  "createdDate": "2024-09-13T00:05:51.885Z",
+  "lastModifiedDate": "2024-09-13T00:10:04.846053600Z"
+}
+````
+
+Eliminamos un item.
+
+````bash
+$ curl -v -X DELETE http://localhost:8080/api/v1/items/66e381df1432ce4b9c6ae677 | jq
+>
+< HTTP/1.1 204 No Content
+<
+````
