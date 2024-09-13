@@ -966,6 +966,31 @@ public class ItemServiceImpl implements ItemService {
 }
 ````
 
+## Agrega CORS a la aplicación
+
+Creamos una clase de configuración donde habilitaremos el cors para el cliente de Angular. Notar, que como estamos
+trabajando con una aplicación reactiva el tipo de dato retornado por el bean es del tipo `CorsWebFilter`.
+
+````java
+
+@Configuration
+public class BeansConfig {
+    @Bean
+    public CorsWebFilter corsWebFilter() {
+        final CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowCredentials(true);
+        configuration.setAllowedOrigins(Collections.singletonList("http://localhost:4200"));
+        configuration.setAllowedHeaders(Arrays.asList(HttpHeaders.ORIGIN, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT, HttpHeaders.AUTHORIZATION));
+        configuration.setAllowedMethods(Arrays.asList(HttpMethod.GET.name(), HttpMethod.POST.name(), HttpMethod.PUT.name(), HttpMethod.DELETE.name(), HttpMethod.PATCH.name(), HttpMethod.HEAD.name()));
+
+        final UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+
+        return new CorsWebFilter(source);
+    }
+}
+````
+
 ## Probando endpoints del controlador ItemController
 
 Crea un nuevo item. Observar que como valor por defecto del `status` es un `TO_DO`.
