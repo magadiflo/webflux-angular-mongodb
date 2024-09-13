@@ -1,5 +1,5 @@
 import { inject, Injectable, NgZone } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
@@ -48,15 +48,20 @@ export class ItemService {
   }
 
   public updateDescription(id: string, version: number, description: string): Observable<Item> {
-    return this._http.patch<Item>(`${this._baseUrl}/${id}`, { description });
+    return this._http.patch<Item>(`${this._baseUrl}/${id}`, { description }, ItemService.buildOptions(version));
   }
 
   public updateStatus(id: string, version: number, status: ItemStatus): Observable<Item> {
-    return this._http.patch<Item>(`${this._baseUrl}/${id}`, { status });
+    return this._http.patch<Item>(`${this._baseUrl}/${id}`, { status }, ItemService.buildOptions(version));
   }
 
   public deleteItem(id: string, version: number): Observable<void> {
-    return this._http.delete<void>(`${this._baseUrl}/${id}`);
+    return this._http.delete<void>(`${this._baseUrl}/${id}`, ItemService.buildOptions(version));
+  }
+
+  private static buildOptions(version: number) {
+    const headers = new HttpHeaders().set('if-match', String(version));
+    return { headers };
   }
 
 }
