@@ -1328,3 +1328,101 @@ public class UnexpectedItemVersionException extends RuntimeException {
     }
 }
 ````
+
+## Verificando la prevención de conflictos mediante el bloqueo optimista
+
+Listemos todos los `items` que tenemos en nuestra base de datos.
+
+````bash
+$ curl -v http://localhost:8080/api/v1/items
+>
+< HTTP/1.1 200 OK
+< Content-Type: text/event-stream;charset=UTF-8
+<
+data:{"id":"66e39231e71a920a69b3b98c","description":"Realizar pruebas unitarias","status":"TO_DO","version":0,"createdDate":"2024-09-13T01:15:29.896Z","lastModifiedDate":"2024-09-13T01:15:29.896Z"}
+
+data:{"id":"66e47ef6b31a643204e02df0","description":"Medios de autenticación","status":"TO_DO","version":0,"createdDate":"2024-09-13T18:05:42.803Z","lastModifiedDate":"2024-09-13T18:05:42.803Z"}
+
+data:{"id":"66e47efcb31a643204e02df1","description":"Medios de pago","status":"TO_DO","version":0,"createdDate":"2024-09-13T18:05:48.530Z","lastModifiedDate":"2024-09-13T18:05:48.530Z"}
+
+data:{"id":"66e47f0db31a643204e02df2","description":"Proceso de ventas","status":"TO_DO","version":0,"createdDate":"2024-09-13T18:06:05.870Z","lastModifiedDate":"2024-09-13T18:06:05.870Z"}
+
+data:{"id":"66e48166b31a643204e02df3","description":"Gestión de clientes","status":"TO_DO","version":0,"createdDate":"2024-09-13T18:16:06.679Z","lastModifiedDate":"2024-09-13T18:16:06.679Z"}
+
+data:{"id":"66e47cc5e8c94926ddf25fc3","description":"Finalización de Integration Test","status":"DONE","version":4,"createdDate":"2024-09-13T17:56:21.075Z","lastModifiedDate":"2024-09-13T23:11:26.549Z"}
+````
+
+Ahora, supongamos que para el item con ID `66e47ef6b31a643204e02df0` hay dos personas que la van a modificar, para eso
+vamos primero el item seleccionado.
+
+````bash
+$ curl -v http://localhost:8080/api/v1/items/66e47ef6b31a643204e02df0 | jq
+>
+< HTTP/1.1 200 OK
+<
+{
+  "id": "66e47ef6b31a643204e02df0",
+  "description": "Medios de autenticación",
+  "status": "TO_DO",
+  "version": 0,
+  "createdDate": "2024-09-13T18:05:42.803Z",
+  "lastModifiedDate": "2024-09-13T18:05:42.803Z"
+}
+````
+
+Entonces, ambas personas que van a actualizar primero consultan sobre el item y reciben el dato
+tal cual se muestra en el resultado anterior. Ahora, supongamos que la primera persona realiza una actualización del
+status y el description, por lo que genera la petición enviando en la cabecera el `If-Match` con el valor de la versión
+del item consultado `0`.
+
+````bash
+$ curl -v -X PUT -H "Content-Type: application/json" -H "If-Match: 0" -d "{\"description\": \"Authentication means is in progress\", \"status\": \"IN_PROGRESS\"}" http://localhost:8080/api/v1/items/66e47ef6b31a643204e02df0 | jq
+>
+< HTTP/1.1 200 OK
+<
+{
+  "id": "66e47ef6b31a643204e02df0",
+  "description": "Authentication means is in progress",
+  "status": "IN_PROGRESS",
+  "version": 1,
+  "createdDate": "2024-09-13T18:05:42.803Z",
+  "lastModifiedDate": "2024-09-14T01:21:06.969555600Z"
+}
+````
+
+Como observamos, la actualización se realiza correctamente sin problemas.
+
+Ahora, la segunda persona, no se ha enterado de la actualización que hizo la persona anterior, así que envía su
+solicitud con los cambios para su actualización y con el mismo valor de la versión para el `If-Match` que se consultó
+inicialmente `0`.
+
+````bash
+$ curl -v -X PUT -H "Content-Type: application/json" -H "If-Match: 0" -d "{\"description\": \"Authentication is DONE\", \"status\": \"DONE\"}" http://localhost:8080/api/v1/items/66e47ef6b31a643204e02df0 | jq
+>
+< HTTP/1.1 412 Precondition Failed
+<
+{
+  "error": "El item tiene una versión diferente a la esperada. Se esperaba [0], se encontró [1]"
+}
+````
+
+Como vemos, la solicitud es rechazada, dado que se ha verificado que las versiones no coinciden, incluso observamos
+que el `status` que nos retorna es `HTTP/1.1 412 Precondition Failed`.
+
+Lo que se tiene que hacer es, volver a consultar el item y enviar nuevamente la solicitud pero con el valor actual de la
+versión en el `If-Match`.
+
+````bash
+$ curl -v -X PUT -H "Content-Type: application/json" -H "If-Match: 1" -d "{\"description\": \"Authentication is DONE\", \"status\": \"DONE\"}" http://localhost:8080/api/v1/items/66e47ef6b31a643204e02df0 | jq
+>
+< HTTP/1.1 200 OK
+<
+{
+  "id": "66e47ef6b31a643204e02df0",
+  "description": "Authentication is DONE",
+  "status": "DONE",
+  "version": 2,
+  "createdDate": "2024-09-13T18:05:42.803Z",
+  "lastModifiedDate": "2024-09-14T01:28:03.928049900Z"
+}
+````
