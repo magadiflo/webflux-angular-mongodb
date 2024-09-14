@@ -10,13 +10,13 @@ import reactor.core.publisher.Mono;
 public interface ItemService {
     Flux<ItemResource> findAllItems();
 
-    Mono<ItemResource> findItemById(final String itemId);
+    Mono<ItemResource> findItemById(final String itemId, final Long version);
 
     Mono<ItemResource> createItem(final NewItemResource item);
 
-    Mono<ItemResource> updateItem(final String itemId, final ItemUpdateResource itemUpdateResource);
+    Mono<ItemResource> updateItem(final String itemId, final ItemUpdateResource itemUpdateResource, Long version);
 
-    Mono<ItemResource> updateItem(final String itemId, final ItemPatchResource itemPatchResource);
+    Mono<ItemResource> updateItem(final String itemId, final ItemPatchResource itemPatchResource, Long version);
 
-    Mono<Void> deleteItem(final String itemId);
+    Mono<Void> deleteItem(final String itemId, Long version);
 }

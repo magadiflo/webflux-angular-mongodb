@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -31,7 +32,7 @@ public class ItemController {
 
     @GetMapping(path = "/{itemId}")
     public Mono<ResponseEntity<ItemResource>> findItemById(@PathVariable final String itemId) {
-        return this.itemService.findItemById(itemId)
+        return this.itemService.findItemById(itemId, null)
                 .map(ResponseEntity::ok);
     }
 
@@ -43,21 +44,24 @@ public class ItemController {
 
     @PutMapping(path = "/{itemId}")
     public Mono<ResponseEntity<ItemResource>> updateItem(@NotNull @PathVariable final String itemId,
-                                                         @Valid @RequestBody final ItemUpdateResource itemUpdateResource) {
-        return this.itemService.updateItem(itemId, itemUpdateResource)
+                                                         @Valid @RequestBody final ItemUpdateResource itemUpdateResource,
+                                                         @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) Long version) {
+        return this.itemService.updateItem(itemId, itemUpdateResource, version)
                 .map(ResponseEntity::ok);
     }
 
     @PatchMapping(path = "/{itemId}")
     public Mono<ResponseEntity<ItemResource>> updateItem(@NotNull @PathVariable final String itemId,
-                                                         @Valid @RequestBody final ItemPatchResource itemPatchResource) {
-        return this.itemService.updateItem(itemId, itemPatchResource)
+                                                         @Valid @RequestBody final ItemPatchResource itemPatchResource,
+                                                         @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) Long version) {
+        return this.itemService.updateItem(itemId, itemPatchResource, version)
                 .map(ResponseEntity::ok);
     }
 
     @DeleteMapping(path = "/{itemId}")
-    public Mono<ResponseEntity<Void>> deleteItem(@PathVariable final String itemId) {
-        return this.itemService.deleteItem(itemId)
+    public Mono<ResponseEntity<Void>> deleteItem(@PathVariable final String itemId,
+                                                 @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) Long version) {
+        return this.itemService.deleteItem(itemId, version)
                 .thenReturn(ResponseEntity.noContent().build());
     }
 

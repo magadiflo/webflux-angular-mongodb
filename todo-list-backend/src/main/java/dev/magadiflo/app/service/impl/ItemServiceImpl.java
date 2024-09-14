@@ -5,6 +5,7 @@ import dev.magadiflo.app.api.ItemResource;
 import dev.magadiflo.app.api.ItemUpdateResource;
 import dev.magadiflo.app.api.NewItemResource;
 import dev.magadiflo.app.exception.ItemNotFoundException;
+import dev.magadiflo.app.exception.UnexpectedItemVersionException;
 import dev.magadiflo.app.mapper.ItemMapper;
 import dev.magadiflo.app.model.Item;
 import dev.magadiflo.app.repository.ItemRepository;
@@ -33,8 +34,8 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
-    public Mono<ItemResource> findItemById(String itemId) {
-        return this.findAnItemById(itemId)
+    public Mono<ItemResource> findItemById(String itemId, Long version) {
+        return this.findAnItemById(itemId, version)
                 .map(this.itemMapper::toResource);
     }
 
@@ -45,8 +46,8 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
-    public Mono<ItemResource> updateItem(String itemId, ItemUpdateResource itemUpdateResource) {
-        return this.findAnItemById(itemId)
+    public Mono<ItemResource> updateItem(String itemId, ItemUpdateResource itemUpdateResource, Long version) {
+        return this.findAnItemById(itemId, version)
                 .flatMap(itemDB -> {
                     this.itemMapper.update(itemUpdateResource, itemDB);
                     return this.itemRepository.save(itemDB);
@@ -55,8 +56,8 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
-    public Mono<ItemResource> updateItem(String itemId, ItemPatchResource itemPatchResource) {
-        return this.findAnItemById(itemId)
+    public Mono<ItemResource> updateItem(String itemId, ItemPatchResource itemPatchResource, Long version) {
+        return this.findAnItemById(itemId, version)
                 .flatMap(itemDB -> {
                     if (itemPatchResource.getDescription() != null) {
                         itemDB.setDescription(itemPatchResource.getDescription());
@@ -70,18 +71,27 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
-    public Mono<Void> deleteItem(String itemId) {
-        return this.findAnItemById(itemId)
+    public Mono<Void> deleteItem(String itemId, Long version) {
+        return this.findAnItemById(itemId, version)
                 .flatMap(this.itemRepository::delete);
     }
 
     /**
-     * @param itemId identificador del item que buscamos
+     * @param itemId          identificador del item que buscamos
+     * @param expectedVersion versión esperada del item (opcional)
      * @return un mono item
-     * @throws ItemNotFoundException si el item con el identificador proporcionado no existe
+     * @throws ItemNotFoundException          si el item con el identificador proporcionado no existe
+     * @throws UnexpectedItemVersionException si el item tiene una versión diferente
      */
-    private Mono<Item> findAnItemById(final String itemId) {
+    private Mono<Item> findAnItemById(final String itemId, final Long expectedVersion) {
         return this.itemRepository.findById(itemId)
-                .switchIfEmpty(Mono.error(new ItemNotFoundException(itemId)));
+                .switchIfEmpty(Mono.error(new ItemNotFoundException(itemId)))
+                .handle((itemDB, itemSynchronousSink) -> {
+                    if (expectedVersion != null && !expectedVersion.equals(itemDB.getVersion())) {
+                        itemSynchronousSink.error(new UnexpectedItemVersionException(expectedVersion, itemDB.getVersion()));
+                    } else {
+                        itemSynchronousSink.next(itemDB);
+                    }
+                });
     }
 }

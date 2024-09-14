@@ -768,7 +768,7 @@ $ curl -v -H "Accept: application/x-ndjson" http://localhost:8080/api/v1/streami
 Por último, pero no menos importante, ¿cómo trata `Spring WebFlux` a `Flux<Data>` cuando no se proporciona un
 `Content-Type`?
 
-Esto es algo con lo que estamos más familiarizados. `Spring WebFlux` simplemente toma todos los elementos y crea una
+Esto es algo con lo que estamos más familiarizados. `Spring WebFlux` simplemente, toma todos los elementos y crea una
 matriz a partir de ellos. Internamente, llama a `Flux.collectList()` que convierte `Flux<T>` en `Mono<List<T>>`.
 Una vez que tenemos todos los elementos individuales recopilados juntos, simplemente creamos una matriz JSON a partir
 de ellos. La lista de elementos recopilados tiene tres enormes efectos secundarios:
@@ -1075,16 +1075,256 @@ $ curl -v -X DELETE http://localhost:8080/api/v1/items/66e381df1432ce4b9c6ae677 
 <
 ````
 
-## Instalando Angular Material
+---
 
-Nos ubicamos en la raíz de nuestro proyecto de Angular y ejecutamos el siguiente comando para instalar
-`Angular Material`.
+# Prevención de conflictos mediante el bloqueo optimista
 
-````bash
-$ ng add @angular/material
+---
+
+En una aplicación colaborativa debemos evitar que los usuarios sobrescriban los datos de los demás. La aplicación que
+hemos desarrollado hasta ahora no evita que los usuarios pierdan sus cambios o sobrescriban los cambios realizados por
+otros usuarios.
+
+Para evitar conflictos entre usuarios, vamos a implementar un mecanismo de `bloqueo optimista`.
+
+El `bloqueo optimista` consiste en evitar modificaciones concurrentes asegurándonos de que el objeto que vamos a guardar
+no haya sido actualizado desde la última vez que lo leímos. Es decir, al leer un `item`, debemos tomar nota de su
+`versión` y al guardarlo, debemos asegurarnos de que la versión no haya cambiado.
+
+Para implementar el `bloqueo optimista`, es necesario agregar un número de versión a la clase `Item`. En nuestro caso,
+el atributo `version` lo agregamos desde el inicio de la construcción de esta aplicación, tal como se ve a continuación:
+
+````java
+
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@Setter
+@Getter
+@Document(collection = "items")
+public class Item {
+
+    @Id
+    @EqualsAndHashCode.Include
+    private String id;
+    /* other properties */
+
+    @Version
+    private Long version;
+    /* other properties */
+}
 ````
 
-Para mayor información sobre la instalación de `Angular Material` visitar mis repositorios:
+Cada vez que se actualiza un item, su versión se incrementa automáticamente en uno. La versión necesita ser enviada
+al cliente en el dto `ItemResource`, tal como lo habíamos trabajado desde un inicio:
 
-- [angular-material](https://github.com/magadiflo/angular-material)
-- [05-heroes-app](https://github.com/magadiflo/angular_de_cero_a_experto_2023/tree/main/05-heroes-app)
+````java
+
+@ToString
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@Setter
+@Getter
+public class ItemResource {
+    private String id;
+    /* other properties */
+    private Long version;
+    /* other properties */
+}
+````
+
+Al actualizar, aplicar un patch o eliminar un item, el cliente debe enviar esta versión de vuelta al servicio. Para
+ello, utilizamos el encabezado de solicitud `If-Match`. Desde nuestra aplicación de Angular enviaríamos dicho
+encabezado tal como enviaríamos cualquier encabezado.
+
+````javascript
+
+@Injectable({
+  providedIn: 'root'
+})
+export class ItemService { 
+  /* other codes */
+  public updateDescription(id: string, version: number, description: string): Observable<Item> {
+    return this._http.patch<Item>(`${this._baseUrl}/${id}`, { description }, ItemService.buildOptions(version));
+  }
+
+  public updateStatus(id: string, version: number, status: ItemStatus): Observable<Item> {
+    return this._http.patch<Item>(`${this._baseUrl}/${id}`, { status }, ItemService.buildOptions(version));
+  }
+
+  public deleteItem(id: string, version: number): Observable<void> {
+    return this._http.delete<void>(`${this._baseUrl}/${id}`, ItemService.buildOptions(version));
+  }
+
+  private static buildOptions(version: number) {
+    const headers = new HttpHeaders().set('if-match', String(version));
+    return { headers };
+  }
+}
+````
+
+La versión es recibida por el controlador que le pasa a los métodos del `ItemService`. Notar que estamos haciendo uso
+de la anotación `@RequestHeader`, el cual indica que el parámetro del método sobre el cual está anotado debe estar
+vinculado a un encabezado de solicitud web. En nuestro caso el header que se mapeará al parámetro `version` será
+`If-Match`.
+
+El encabezado `HTTP If-Match` se utiliza para hacer que una solicitud sea condicional. Específicamente, el cliente (como
+un navegador o una API) envía este encabezado junto con una operación (por ejemplo, `PUT`, `PATCH`, o `DELETE`) para
+indicar que el recurso solo debe ser procesado si coincide con una o más etiquetas de entidad `ETag` (Entity Tag)
+especificadas en el encabezado.
+
+Un `ETag` es un identificador único asociado a una versión específica de un recurso. Cuando un recurso cambia, su `ETag`
+también cambia. Esto es útil para gestionar el control de versiones de los recursos en la web.
+
+#### Funcionamiento de If-Match
+
+- El cliente incluye en el encabezado `If-Match` una o varias `ETags` (separadas por comas).
+- El servidor recibe la solicitud y compara las `ETags` proporcionadas en el encabezado con la `ETag` actual del
+  recurso.
+- Si alguna de las `ETags` coincide con la `ETag` actual del recurso, la operación solicitada (por ejemplo,
+  actualización o eliminación) se ejecuta.
+- Si no coinciden, el servidor responde con un código de estado `412 Precondition Failed`, y la solicitud no se procesa.
+
+#### Uso típico
+
+- `Optimistic Locking`: Se usa para evitar conflictos cuando varios clientes intentan modificar el mismo recurso al
+  mismo tiempo. Si un cliente intenta actualizar o eliminar un recurso, pero la versión que tiene ya no es la más
+  reciente (su `ETag` no coincide), el servidor puede evitar que sobrescriba los cambios de otro cliente.
+- `Actualizaciones condicionales`: Se asegura de que el recurso solo se modifique si coincide con la versión que tiene
+  el cliente, garantizando que no se estén sobrescribiendo cambios hechos por otros.
+
+````java
+
+@Slf4j
+@RequiredArgsConstructor
+@RestController
+@RequestMapping(path = "/api/v1/items")
+public class ItemController {
+
+    /* other codes */
+
+    @PutMapping(path = "/{itemId}")
+    public Mono<ResponseEntity<ItemResource>> updateItem(@NotNull @PathVariable final String itemId,
+                                                         @Valid @RequestBody final ItemUpdateResource itemUpdateResource,
+                                                         @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) Long version) {
+        return this.itemService.updateItem(itemId, itemUpdateResource, version)
+                .map(ResponseEntity::ok);
+    }
+
+    @PatchMapping(path = "/{itemId}")
+    public Mono<ResponseEntity<ItemResource>> updateItem(@NotNull @PathVariable final String itemId,
+                                                         @Valid @RequestBody final ItemPatchResource itemPatchResource,
+                                                         @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) Long version) {
+        return this.itemService.updateItem(itemId, itemPatchResource, version)
+                .map(ResponseEntity::ok);
+    }
+
+    @DeleteMapping(path = "/{itemId}")
+    public Mono<ResponseEntity<Void>> deleteItem(@PathVariable final String itemId,
+                                                 @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) Long version) {
+        return this.itemService.deleteItem(itemId, version)
+                .thenReturn(ResponseEntity.noContent().build());
+    }
+
+}
+````
+
+En el servicio, se recupera el item de la base de datos y se compara su versión con la proporcionada por el cliente.
+
+````java
+
+@Slf4j
+@RequiredArgsConstructor
+@Service
+public class ItemServiceImpl implements ItemService {
+
+    /* other codes */
+
+    /**
+     * @param itemId          identificador del item que buscamos
+     * @param expectedVersion versión esperada del item (opcional)
+     * @return un mono item
+     * @throws ItemNotFoundException          si el item con el identificador proporcionado no existe
+     * @throws UnexpectedItemVersionException si el item tiene una versión diferente
+     */
+    private Mono<Item> findAnItemById(final String itemId, final Long expectedVersion) {
+        return this.itemRepository.findById(itemId)
+                .switchIfEmpty(Mono.error(new ItemNotFoundException(itemId)))
+                .handle((itemDB, itemSynchronousSink) -> {
+                    if (expectedVersion != null && !expectedVersion.equals(itemDB.getVersion())) {
+                        itemSynchronousSink.error(new UnexpectedItemVersionException(expectedVersion, itemDB.getVersion()));
+                    } else {
+                        itemSynchronousSink.next(itemDB);
+                    }
+                });
+    }
+}
+````
+
+El método anterior busca un ítem por su ID, verifica si la versión del ítem coincide con la versión esperada y maneja
+los casos de ítem no encontrado o versión incorrecta lanzando las excepciones correspondientes.
+
+El operador `handle((item, itemSynchronousSink) -> {...})`, permite procesar los elementos que pasan por el flujo de
+datos de forma más detallada, permitiendo emitir o detener elementos según alguna lógica interna.
+Recibe dos parámetros:
+
+- `itemDB`: El elemento que fue encontrado por `findById`.
+- `itemSynchronousSink`, Un objeto que permite emitir elementos o errores.
+
+Entonces, el operador `handle()`, maneje los items emitidos por este Mono llamando a un `biconsumer` con el receptor
+de salida para cada `onNext`. Se debe realizar como máximo una llamada a `SynchronousSink.next(Object)` y/o 0 o 1
+`SynchronousSink.error(Throwable)` o `SynchronousSink.complete()`.
+
+Ahora, en general, dentro del operador `handle()` estamos verificando la versión del item. Si las versiones son
+diferentes, se detecta un conflicto y la solicitud se rechaza con la creación de una `UnexpectedItemVersionException`.
+Tenga en cuenta que esta excepción no se produce directamente. Si bien esto funcionaría, gracias a la implementación del
+reactor, se considera una mala práctica y es contrario a la especificación reactiva. La especificación establece que la
+única forma legal de señalar un error a un suscriptor es a través del método `onError`. Por lo tanto, en lugar de
+iniciar la excepción, usamos el operador `handle()` y señalamos el error mediante la instancia de `SynchronousSink`
+proporcionada.
+
+Si las versiones son idénticas, el servicio puede realizar alguna lógica de negocio y, al final, llamar al método save
+del repositorio de Mongo. En ese momento, el repositorio comprobará una vez más la versión del elemento. Si ha cambiado,
+se produce una excepción `OptimisticLockException` y se rechaza la solicitud. Si las versiones son idénticas, se guarda
+el elemento.
+
+Gracias al `bloqueo optimista`, los usuarios ya no pueden sobrescribir los cambios de los demás.
+
+### Manejo de excepciones
+
+Creamos nuestro controlador global de excepciones para manejar de una mejor manera las excepciones de la aplicación.
+
+````java
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler({ItemNotFoundException.class})
+    public ResponseEntity<Map<String, Object>> handle(NotFoundException exception) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", exception.getMessage()));
+    }
+
+    @ExceptionHandler(UnexpectedItemVersionException.class)
+    public ResponseEntity<Map<String, Object>> handle(UnexpectedItemVersionException exception) {
+        return ResponseEntity
+                .status(HttpStatus.PRECONDITION_FAILED)
+                .body(Map.of("error", exception.getMessage()));
+    }
+
+}
+````
+
+Se ha creado la siguiente excepción cuando las versiones del item no coinciden.
+
+````java
+public class UnexpectedItemVersionException extends RuntimeException {
+    public UnexpectedItemVersionException(Long expectedVersion, Long foundVersion) {
+        super("El item tiene una versión diferente a la esperada. Se esperaba [%d], se encontró [%d]".formatted(expectedVersion, foundVersion));
+    }
+}
+````
